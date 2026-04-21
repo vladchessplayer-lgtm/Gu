@@ -9,7 +9,6 @@
             padding: 0;
             box-sizing: border-box;
             user-select: none;
-            touch-action: manipulation;
         }
         body {
             background-color: black;
@@ -106,7 +105,6 @@
             margin: 20px auto;
             box-shadow: 0 0 20px rgba(255,255,255,0.2);
             cursor: pointer;
-            touch-action: none;
         }
         .game-info {
             display: flex;
@@ -114,36 +112,15 @@
             margin-top: 10px;
             font-size: 18px;
         }
-        .controls {
-            display: flex;
-            justify-content: center;
-            gap: 30px;
-            margin-top: 15px;
-        }
-        .ctrl-btn {
-            background: #333;
-            color: white;
-            font-size: 32px;
-            font-weight: bold;
-            padding: 10px 30px;
-            border-radius: 60px;
-            cursor: pointer;
-            transition: 0.2s;
-            touch-action: manipulation;
-        }
-        .ctrl-btn:active {
-            background: #ff9800;
-            transform: scale(0.95);
-        }
         .reset-game {
             background-color: #444;
-            margin-top: 15px;
+            margin-top: 10px;
             padding: 8px 20px;
         }
         .win-message {
             font-size: 24px;
             color: #ffcc66;
-margin-top: 20px;
+            margin-top: 20px;
             animation: pulse 1s infinite;
         }
         @keyframes pulse {
@@ -156,10 +133,6 @@ margin-top: 20px;
             font-size: 12px;
             color: #888;
         }
-        max-width: 600px {
-            .ctrl-btn { font-size: 28px; padding: 8px 25px; }
-            canvas { width: 100%; height: auto; }
-        }
     </style>
 </head>
 <body>
@@ -169,7 +142,8 @@ margin-top: 20px;
 
 <div id="passwordPage" class="container">
     <h1>🌞 Введи пароль 🌙</h1>
-    <input type="text" id="passwordInput" placeholder="Пароль" autocomplete="off">
+    <input type="text" id="passwordInput" placeho
+    lder="Пароль" autocomplete="off">
     <button onclick="checkPassword()">Войти</button>
     <div id="hint"></div>
     <footer>Подсказка через 10 секунд</footer>
@@ -180,13 +154,11 @@ margin-top: 20px;
     <canvas id="gameCanvas" width="700" height="400"></canvas>
     <div class="game-info">
         <span>🔤 Собрано: <span id="collectedCount">0</span> / <span id="totalCount">0</span></span>
-    </div>
-    <div class="controls">
-        <div class="ctrl-btn" id="leftBtn">←</div>
-        <div class="ctrl-btn" id="rightBtn">→</div>
+        <span>❤️ Ошибки: <span id="mistakeCount">0</span></span>
     </div>
     <button id="resetGameBtn" class="reset-game">⟳ Заново</button>
     <div id="winMessage" class="win-message"></div>
+    <footer>12.04 | алты + йети = ❤️</footer>
 </div>
 
 <script>
@@ -230,19 +202,24 @@ margin-top: 20px;
     }
     startHintTimer();
 
-    // ----- ИГРА «СОБЕРИ БУКВЫ» (только нужные буквы по порядку) -----
+    // ----- ИГРА «СОБЕРИ БУКВЫ» -----
     let canvas = document.getElementById('gameCanvas');
     let ctx = canvas.getContext('2d');
     let gameRunning = true;
     let animationId = null;
 
-    const WORD = "ГЮНАЙ";
+    // Параметры
+    const WORD = "ГЮНАЙ";          // слово, которое нужно собрать
     const LETTERS = WORD.split(''); // ['Г','Ю','Н','А','Й']
-    let currentIndex = 0;          // индекс следующей нужной буквы
-    let collected = [];             // собранные буквы
+    let currentTargetIndex = 0;    // какая буква следующая
+    let collectedLetters = [];      // собранные буквы (для отображения)
+    let mistakes = 0;
+
+    // Падающие буквы
     let fallingLetters = [];
     let frame = 0;
-    const SPAWN_DELAY = 40;        // кадров между появлением
+    let spawnCounter = 0;
+    const SPAWN_DELAY = 45;        // кадров между появлением новой буквы
 
     // Герой
     let heroX = canvas.width / 2;
@@ -255,48 +232,59 @@ margin-top: 20px;
     let rightPressed = false;
     const HERO_SPEED = 7;
 
-    // UI
+    // Счётчики UI
     let collectedSpan = document.getElementById('collectedCount');
     let totalSpan = document.getElementById('totalCount');
+    let mistakeSpan = document.getElementById('mistakeCount');
     let winMessageDiv = document.getElementById('winMessage');
+
     totalSpan.innerText = LETTERS.length;
-
-    function updateUI() {
-        collect
-edSpan.innerText = collected.length;
-    }
-
-    // Спавним только ту букву, которая сейчас нужна (LETTERS[currentIndex])
-    function spawnLetter() {
-        if (!gameRunning || currentIndex >= LETTERS.length) return;
-        let neededLetter = LETTERS[currentIndex];
-        let x = Math.random() * (canvas.width - 40) + 20;
-        fallingLetters.push({
-            letter: neededLetter,
-            x: x,
-            y: 0,
-            radius: 20
-        });
-    }
 
     function resetGame() {
         gameRunning = true;
-        currentIndex = 0;
-        collected = [];
+        currentTargetIndex = 0;
+        collectedLetters = [];
+        mistakes = 0;
         fallingLetters = [];
         frame = 0;
+        spawnCounter = 0;
         heroX = canvas.width / 2;
-        leftPressed = false;
-        rightPressed = false;
         updateUI();
         winMessageDiv.innerHTML = '';
         if (animationId) cancelAnimationFrame(animationId);
         animationId = requestAnimationFrame(gameLoop);
     }
 
+    function updateUI() {
+        collectedSpan.innerText = collectedLetters.length;
+        mistakeSpan.innerText = mistakes;
+    }
+
+    function spawnLetter() {
+        // если игра закончена (победа) или все буквы собраны, не спавним
+        if (!gameRunning || currentTargetIndex >= LETTERS.length) return;
+        // буква для спавна – следующая по порядку? Нет, лучше спавнить любые, но ловить нужно только нужную.
+        // Чтобы игра была честной, будем спавнить только те буквы, которые ещё не собраны и не являются следующей? 
+        // Сделаем проще: спавним случайную букву из алфавита? Не интересно.
+        // Сделаем так: спавним букву, которая равна текущей целевой, иначе игрок будет ловить мусор. Но тогда игра слишком простая.
+        // Для аркадности: спавним любые буквы, но если поймал не ту – ошибка. Ловить нужно только следующую.
+        // Чтобы было не слишком хаотично, спавним только буквы, которые есть в слове (включая уже собранные? нет, собранные уже не нужны).
+        // Спавним буквы из оставшихся (начиная с текущей и до конца).
+        let remainingLetters = LETTERS.slice(currentTargetIndex);
+        if (remainingLetters.length === 0) return;
+        let randomLetter = remainingLetters[Math.floor(Math.random() * remainingLetters.length)];
+        let x = Math.random() * (canvas.width - 30) + 15;
+        fallingLetters.push({
+            letter: randomLetter,
+            x: x,
+            y: 0,
+            radius: 18
+        });
+    }
+
     function gameLoop() {
         if (!gameRunning) return;
-
+        // Обновление
         frame++;
         if (frame % SPAWN_DELAY === 0) {
             spawnLetter();
@@ -309,25 +297,36 @@ edSpan.innerText = collected.length;
         // Движение букв и проверка столкновений
         for (let i = 0; i < fallingLetters.length; i++) {
             let l = fallingLetters[i];
-            l.y += 2.5;
-            // Столкновение с героем
+            l.y += 2.5; // скорость падения
+            // Проверка: достигла ли героя?
             if (l.y + l.radius >= HERO_Y && l.y - l.radius <= HERO_Y + HERO_HEIGHT &&
                 l.x + l.radius >= heroX && l.x - l.radius <= heroX + HERO_WIDTH) {
-                // Всегда правильная буква, т.к. спавнится только нужная
-                collected.push(l.letter);
-                currentIndex++;
-                updateUI();
-                fallingLetters.splice(i,1);
-                i--;
-                if (currentIndex === LETTERS.length) {
-                    gameRunning = false;
-                    winMessageDiv.innerHTML = '❤️ Ты собрала слово! Ты удивительная, Гюнай! 🌞🌙 ❤️';
-                    cancelAnimationFrame(animationId);
-                    return;
+                // поймали букву
+                if (l.letter === LETTERS[currentTargetIndex]) {
+                    // правильная буква
+                    collectedLetters.push(l.letter);
+                    currentTargetIndex++;
+                    updateUI();
+                    fallingLetters.splice(i,1);
+                    i--;
+                    if (currentTargetIndex === LETTERS.length) {
+                        // победа
+                        gameRunning = false;
+                        winMessageDiv.innerHTML = '❤️ Ты собрала слово! Ты удивительная, Гюнай! 🌞🌙 ❤️';
+                        cancelAnimationFrame(animationId);
+                        return;
+                    }
+                } else {
+                    // ошибка
+                    mistakes++;
+                    updateUI();
+                    fallingLetters.splice(i,1);
+                    i--;
                 }
-            }
-            else if (l.y + l.radius > canvas.height) {
-                // Упала вниз — ничего страшного, просто исчезает
+            } else if (l.y + l.radius > canvas.height) {
+                // упала вниз – ошибка
+                mistakes++;
+                updateUI();
                 fallingLetters.splice(i,1);
                 i--;
             }
@@ -339,38 +338,40 @@ edSpan.innerText = collected.length;
 
     function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
+        // фон
         ctx.fillStyle = '#111';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         
-        // Герой
+        // герой (квадратик с лицом)
         ctx.fillStyle = '#ffaa33';
         ctx.fillRect(heroX, HERO_Y, HERO_WIDTH, HERO_HEIGHT);
         ctx.fillStyle = 'black';
         ctx.font = '20px Arial';
         ctx.fillText('😊', heroX+10, HERO_Y+22);
         
-        // Падающие буквы
+        // падающие буквы
         for (let l of fallingLetters) {
             ctx.fillStyle = '#ffcc66';
             ctx.beginPath();
             ctx.arc(l.x, l.y, l.radius, 0, 2*Math.PI);
             ctx.fill();
             ctx.fillStyle = 'black';
-            ctx.font = 'bold 22px monospace';
-            ctx.fillText(l.letter, l.x-10, l.y+8);
+            ctx.font = 'bold 20px monospace';
+            ctx.fillText(l.
+            letter, l.x-10, l.y+8);
         }
         
-        // Отображение собранных букв
+        // отображение собранных букв вверху
         ctx.fillStyle = 'white';
         ctx.font = '24px monospace';
-        ctx.fillText('Собрано: ' + collected.join(''), 20, 40);
+        ctx.fillText('Собрано: ' + collectedLetters.join(''), 20, 40);
         ctx.fillStyle = '#aaa';
         ctx.fillText('Нужно: ' + WORD, 20, 80);
         
-        // Подсказка
+        // подсказка по управлению
         ctx.fillStyle = '#888';
         ctx.font = '14px Arial';
-        ctx.fillText('← →  или кнопки', canvas.width-150, canvas.height-20);
+        ctx.fillText('← →  управление', canvas.width-150, canvas.height-20);
     }
 
     // Управление с клавиатуры
@@ -382,17 +383,6 @@ edSpan.innerText = collected.length;
         if (e.key === 'ArrowLeft') leftPressed = false;
         if (e.key === 'ArrowRight') rightPressed = false;
     });
-
-    // Сенсорные кнопки для телефона
-    document.getElementById('leftBtn').addEventListener('touchstart', (e) => { e.preventDefault(); leftPressed = true; });
-    document.getElementById('leftBtn').addEventListener('touchend', (e) => { e.preventDefault(); leftPressed = false; });
-    document.getElementById('rightBtn').addEventListener('touchstart', (e) => { e.preventDefault(); rightPressed = true; });
-    document.getElementById('rightBtn').addEventListener('touchend', (e) => { e.preventDefault(); rightPressed = false; });
-    // Для мыши на случай кликов
-    document.getElementById('leftBtn').addEventListener('mousedown', () => leftPressed = true);
-    document.getElementById('leftBtn').addEventListener('mouseup', () => leftPressed = false);
-    document.getElementById('rightBtn').addEventListener('mousedown', () => rightPressed = true);
-    document.getElementById('rightBtn').addEventListener('mouseup', () => rightPressed = false);
 
     // Кнопка сброса
     document.getElementById('resetGameBtn').addEventListener('click', () => {
